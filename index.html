@@ -3,244 +3,224 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Web AR T-Shirt Fitting (Manual Upper UI)</title>
+    <title>Manual T-Shirt Try-On</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
-        /* カメラ映像を全画面に */
-        #video-container {
-            position: relative;
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
             width: 100vw;
             height: 100vh;
-            overflow: hidden;
+            background-color: #000;
+            touch-action: none; /* スマホでの意図しないスクロールやズームを防止 */
+            font-family: sans-serif;
         }
-        video {
-            width: 100%;
-            height: 100%;
-            object-fit: cover; /* 画面いっぱいにフィットさせる */
-        }
-        /* キャンバス（Tシャツ描画用） */
-        canvas {
+
+        /* カメラ映像を画面全体にフィット */
+        #camera-video {
             position: absolute;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
-            pointer-events: none; /* タッチイベントを透過させる */
-            z-index: 2;
+            object-fit: cover;
+            z-index: 1;
+            transform: scaleX(-1); /* 初期値はインカメラ用に反転 */
         }
-        /* 操作パネルを上部に配置 */
-        #controls {
+
+        /* 試着するTシャツ画像 */
+        #tshirt-image {
             position: absolute;
-            top: 10px; /* 上端からの距離 */
+            top: 50%;
+            left: 50%;
+            width: 280px; /* 初期サイズ */
+            height: auto;
+            transform: translate(-50%, -50%);
+            z-index: 2;
+            cursor: grab;
+            filter: drop-shadow(0 4px 6px rgba(0,0,0,0.3));
+        }
+
+        #tshirt-image:active {
+            cursor: grabbing;
+        }
+
+        /* 操作UIパネル（画面上部に配置） */
+        #ui-panel {
+            position: absolute;
+            top: 20px;
             left: 50%;
             transform: translateX(-50%);
-            width: 90%;
-            max-width: 400px;
-            background: rgba(0, 0, 0, 0.6);
-            color: white;
-            padding: 15px;
-            border-radius: 10px;
             z-index: 10;
-            box-sizing: border-radius;
-            text-align: center;
+            background: rgba(0, 0, 0, 0.6);
+            padding: 12px 16px;
+            border-radius: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            width: 85%;
+            max-width: 320px;
+            color: #fff;
+            box-sizing: border-box;
+            backdrop-filter: blur(5px);
         }
-        .control-group { margin-bottom: 10px; }
-        label { display: block; margin-bottom: 5px; font-size: 14px; }
-        input[type="range"] { width: 100%; }
-        
-        button {
-            background: #fff;
-            color: #000;
-            border: none;
-            padding: 8px 15px;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 14px;
-            margin: 0 5px;
-        }
-        button:active { background: #ccc; }
 
-        /* 画面反転用（インカメラ用） */
-        .mirror {
-            transform: scaleX(-1);
+        .control-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+        }
+
+        label {
+            font-size: 12px;
+            white-space: nowrap;
+        }
+
+        input[type="range"] {
+            flex-grow: 1;
+        }
+
+        button {
+            background: #ff5722;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: bold;
+            cursor: pointer;
+            width: 100%;
+        }
+
+        button:active {
+            background: #e64a19;
         }
     </style>
 </head>
 <body>
 
-<div id="video-container">
-    <video id="webcam" autoplay playsinline></video>
-    <canvas id="output_canvas"></canvas>
+    <video id="camera-video" autoplay playsinline></video>
 
-    <div id="controls">
-        <div class="control-group">
-            <label>サイズ調整 (ドラッグで移動):</label>
-            <input type="range" id="sizeSlider" min="0.3" max="3.0" step="0.1" value="1.0">
+    <img id="tshirt-image" src="MS1136_model_sample.png" alt="T-Shirt">
+
+    <div id="ui-panel">
+        <div class="control-row">
+            <label for="scale-slider">サイズ</label>
+            <input type="range" id="scale-slider" min="100" max="600" value="280">
         </div>
-        <div class="control-group">
-            <button id="switchCamera">カメラ切り替え</button>
-            <button id="resetBtn">リセット</button>
-        </div>
+        <button id="switch-camera-btn">カメラ切り替え (イン/アウト)</button>
+        <button id="reset-btn">位置をリセット</button>
     </div>
-</div>
 
-<script>
-    const video = document.getElementById('webcam');
-    const canvas = document.getElementById('output_canvas');
-    const ctx = canvas.getContext('2d');
-    const sizeSlider = document.getElementById('sizeSlider');
-    const switchCameraBtn = document.getElementById('switchCamera');
-    const resetBtn = document.getElementById('resetBtn');
-    const videoContainer = document.getElementById('video-container');
+    <script>
+        const video = document.getElementById('camera-video');
+        const tshirt = document.getElementById('tshirt-image');
+        const scaleSlider = document.getElementById('scale-slider');
+        const switchCameraBtn = document.getElementById('switch-camera-btn');
+        const resetBtn = document.getElementById('reset-btn');
 
-    // Tシャツ画像の設定
-    const tshirtImg = new Image();
-    tshirtImg.src = 'MS113_model_sample.png'; // 画像ファイル名
+        let currentFacingMode = 'user'; // 'user' (イン), 'environment' (アウト)
+        let posX = window.innerWidth / 2;
+        let posY = window.innerHeight / 2;
+        let currentWidth = 280;
 
-    // 状態管理変数
-    let currentFacingMode = 'user'; // インカメラ: 'user', アウトカメラ: 'environment'
-    let scale = 1.0;
-    let position = { x: 0, y: 0 }; // 画面中央からのオフセット
-    let isDragging = false;
-    let dragStart = { x: 0, y: 0 };
-    let imgDisplaySize = { width: 0, height: 0 }; // 描画時のサイズ
-
-    // カメラの起動
-    async function startCamera(facingMode) {
-        if (video.srcObject) {
-            video.srcObject.getTracks().forEach(track => track.stop());
-        }
-
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: facingMode }
-            });
-            video.srcObject = stream;
-
-            // インカメラの場合は画面を反転させる
-            if (facingMode === 'user') {
-                video.classList.add('mirror');
-            } else {
-                video.classList.remove('mirror');
+        // カメラの起動
+        async function startCamera(facingMode) {
+            try {
+                if (video.srcObject) {
+                    video.srcObject.getTracks().forEach(track => track.stop());
+                }
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: facingMode, width: { ideal: 1280 }, height: { ideal: 720 } },
+                    audio: false
+                });
+                video.srcObject = stream;
+                
+                // インカメラの時は鏡写し、アウトカメラの時は通常の向きにする
+                if (facingMode === 'user') {
+                    video.style.transform = 'scaleX(-1)';
+                } else {
+                    video.style.transform = 'scaleX(1)';
+                }
+            } catch (err) {
+                console.error("カメラの起動に失敗しました: ", err);
+                alert("カメラへのアクセスが許可されていないか、利用できません。");
             }
-
-            return new Promise((resolve) => {
-                video.onloadedmetadata = () => {
-                    resolve(video);
-                };
-            });
-        } catch (err) {
-            console.error("カメラの起動に失敗しました:", err);
-            alert("カメラの起動に失敗しました. 権限を許可してください.");
         }
-    }
 
-    // キャンバスのサイズ調整と再描画
-    function resizeCanvas() {
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
-        drawTshirt(); // サイズが変わったら再描画
-    }
-
-    // Tシャツの描画処理
-    function drawTshirt() {
-        if (!tshirtImg.complete) return;
-
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-        // 基準となる画像の大きさを計算 (画面幅の半分を基準にする)
-        const baseWidth = canvas.width * 0.5;
-        const aspectRatio = tshirtImg.height / tshirtImg.width;
-        
-        imgDisplaySize.width = baseWidth * scale;
-        imgDisplaySize.height = imgDisplaySize.width * aspectRatio;
-
-        // 描画位置の計算 (画面中央 + オフセット)
-        const centerX = canvas.width / 2;
-        const centerY = canvas.height / 2;
-        
-        const drawX = centerX - (imgDisplaySize.width / 2) + position.x;
-        const drawY = centerY - (imgDisplaySize.height / 2) + position.y;
-
-        ctx.drawImage(tshirtImg, drawX, drawY, imgDisplaySize.width, imgDisplaySize.height);
-    }
-
-    // --- イベントリスナー ---
-
-    // スライダーでサイズ変更
-    sizeSlider.addEventListener('input', (e) => {
-        scale = parseFloat(e.target.value);
-        drawTshirt();
-    });
-
-    // カメラ切り替え
-    switchCameraBtn.addEventListener('click', () => {
-        currentFacingMode = (currentFacingMode === 'user') ? 'environment' : 'user';
-        startCamera(currentFacingMode);
-    });
-
-    // リセット
-    resetBtn.addEventListener('click', () => {
-        scale = 1.0;
-        position = { x: 0, y: 0 };
-        sizeSlider.value = 1.0;
-        drawTshirt();
-    });
-
-    // --- ドラッグ（タッチ）操作の実装 ---
-
-    // 座標取得の共通関数 (マウスとタッチの両方に対応)
-    function getEventPos(e) {
-        if (e.touches) {
-            return { x: e.touches[0].clientX, y: e.touches[0].clientY };
-        } else {
-            return { x: e.clientX, y: e.clientY };
+        // 初期位置とサイズの適用
+        function updateTshirtTransform() {
+            tshirt.style.left = posX + 'px';
+            tshirt.style.top = posY + 'px';
+            tshirt.style.width = currentWidth + 'px';
+            tshirt.style.transform = 'translate(-50%, -50%)';
         }
-    }
 
-    function onDragStart(e) {
-        isDragging = true;
-        const pos = getEventPos(e);
-        dragStart.x = pos.x - position.x;
-        dragStart.y = pos.y - position.y;
-    }
+        // リセット処理
+        function resetPosition() {
+            posX = window.innerWidth / 2;
+            posY = window.innerHeight / 2;
+            currentWidth = 280;
+            scaleSlider.value = currentWidth;
+            updateTshirtTransform();
+        }
 
-    function onDragMove(e) {
-        if (!isDragging) return;
-        e.preventDefault(); // スクロール等を防止
+        // タッチ＆ドラッグによる位置移動の実装
+        let isDragging = false;
+        let startX, startY;
 
-        const pos = getEventPos(e);
-        position.x = pos.x - dragStart.x;
-        position.y = pos.y - dragStart.y;
-        
-        drawTshirt();
-    }
+        function dragStart(e) {
+            isDragging = true;
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            startX = clientX - posX;
+            startY = clientY - posY;
+        }
 
-    function onDragEnd() {
-        isDragging = false;
-    }
+        function dragMove(e) {
+            if (!isDragging) return;
+            e.preventDefault();
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            posX = clientX - startX;
+            posY = clientY - startY;
+            updateTshirtTransform();
+        }
 
-    // マウスイベント
-    videoContainer.addEventListener('mousedown', onDragStart);
-    window.addEventListener('mousemove', onDragMove);
-    window.addEventListener('mouseup', onDragEnd);
+        function dragEnd() {
+            isDragging = false;
+        }
 
-    // タッチイベント
-    videoContainer.addEventListener('touchstart', onDragStart, { passive: false });
-    window.addEventListener('touchmove', onDragMove, { passive: false });
-    window.addEventListener('touchend', onDragEnd);
+        // イベントリスナーの登録（マウス・タッチ両対応）
+        tshirt.addEventListener('mousedown', dragStart);
+        window.addEventListener('mousemove', dragMove);
+        window.addEventListener('mouseup', dragEnd);
 
+        tshirt.addEventListener('touchstart', dragStart, { passive: false });
+        window.addEventListener('touchmove', dragMove, { passive: false });
+        window.addEventListener('touchend', dragEnd);
 
-    // --- 初期化処理 ---
-    tshirtImg.onload = () => {
-        // カメラ起動後にキャンバスを初期化して描画
-        startCamera(currentFacingMode).then(() => {
-            resizeCanvas();
-            window.addEventListener('resize', resizeCanvas);
+        // スライダーでサイズ変更
+        scaleSlider.addEventListener('input', (e) => {
+            currentWidth = parseInt(e.target.value);
+            updateTshirtTransform();
         });
-    };
 
-</script>
+        // カメラ切り替えボタン
+        switchCameraBtn.addEventListener('click', () => {
+            currentFacingMode = (currentFacingMode === 'user') ? 'environment' : 'user';
+            startCamera(currentFacingMode);
+        });
 
+        // リセットボタン
+        resetBtn.addEventListener('click', resetPosition);
+
+        // 初期化実行
+        window.addEventListener('load', () => {
+            resetPosition();
+            startCamera(currentFacingMode);
+        });
+    </script>
 </body>
 </html>
